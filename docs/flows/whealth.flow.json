@@ -22,16 +22,16 @@
   },
   {
     "title": "假資料來源 fixtures",
-    "status": "warn",
+    "status": "ok",
     "ref": "src/mock/fixtures.ts",
-    "notes": "buildBeds/buildInitialAlerts/buildTrend。原型假資料，待接真後端。",
+    "notes": "buildBeds/buildInitialAlerts/buildTrend。已修 buildTrend 最新點對齊 current。(原型假資料，之後接真後端)",
     "next": "6"
   },
   {
     "title": "模擬即時串流 simulator",
-    "status": "warn",
+    "status": "ok",
     "ref": "src/mock/simulator.ts:74",
-    "notes": "每 1s tick 新鮮度、每 3s step() 推遙測。模擬樹莓派/WebSocket，待換真串流。",
+    "notes": "每 1s tick 新鮮度、每 3s step() 推遙測。已修抖動漂移(繞固定基準線)。(模擬串流，之後換真 WebSocket)",
     "next": "6"
   },
   {
