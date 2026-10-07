@@ -34,22 +34,76 @@ const itemNext = (item: ItemProjection): string =>
   typeof item.fields?.next === 'string' ? item.fields.next : ''
 
 // 首次開啟時自動塞入的 CrystalCraft（NANOMATERIALS）真實流程
-const SEED_STEPS: ReadonlyArray<{
+const SEED_STEPS: readonly {
   title: string
   status: ItemStatus
   ref: string
   notes: string
   next: string
-}> = [
-  { title: '載入 Three.js（CDN→內嵌）', status: 'ok', ref: 'lib/three.min.js（已內嵌）', notes: '改成單一離線檔，不依賴 CDN。', next: '2' },
-  { title: 'initThree() 建立場景', status: 'ok', ref: 'initThree()', notes: '相機、燈光、OrbitControls。', next: '3' },
-  { title: 'rebuild() 依 state 重建 3D', status: 'ok', ref: 'rebuild()', notes: '每次參數變動都重建場景。', next: '4' },
-  { title: '修正語法錯誤：多餘的 )', status: 'ok', ref: 'rebuild() 的 forEach 那行', notes: '多一個 ) 讓整支 JS 無法編譯。', next: '5' },
-  { title: 'editMotif() 即時編輯 x/y/z', status: 'ok', ref: 'editMotif() / oninput', notes: '改成不重建表格，避免焦點被摧毀。', next: '6' },
-  { title: '輸入框字體顏色 + 欄寬', status: 'ok', ref: 'renderMotif() / CSS table-layout', notes: 'table-layout:fixed 讓數值放得下。', next: '7' },
-  { title: '元素週期表（新增/參考）', status: 'ok', ref: 'buildPeriodicTable() / ptAdd()', notes: '118 元素，點擊即新增原子。', next: '8' },
-  { title: 'Flow Inspector：notes 第二欄位', status: 'ok', ref: 'itemFields[] 一般化（ref + notes）', notes: '已修：單一 itemField → 陣列。', next: '9' },
-  { title: 'Flow Inspector：節點連線 edges', status: 'ok', ref: 'parseNextTargets() / drawFlowEdge()', notes: '已實作：next 欄位 + 畫布畫線＋箭頭。', next: '' }
+}[] = [
+  {
+    title: '載入 Three.js（CDN→內嵌）',
+    status: 'ok',
+    ref: 'lib/three.min.js（已內嵌）',
+    notes: '改成單一離線檔，不依賴 CDN。',
+    next: '2'
+  },
+  {
+    title: 'initThree() 建立場景',
+    status: 'ok',
+    ref: 'initThree()',
+    notes: '相機、燈光、OrbitControls。',
+    next: '3'
+  },
+  {
+    title: 'rebuild() 依 state 重建 3D',
+    status: 'ok',
+    ref: 'rebuild()',
+    notes: '每次參數變動都重建場景。',
+    next: '4'
+  },
+  {
+    title: '修正語法錯誤：多餘的 )',
+    status: 'ok',
+    ref: 'rebuild() 的 forEach 那行',
+    notes: '多一個 ) 讓整支 JS 無法編譯。',
+    next: '5'
+  },
+  {
+    title: 'editMotif() 即時編輯 x/y/z',
+    status: 'ok',
+    ref: 'editMotif() / oninput',
+    notes: '改成不重建表格，避免焦點被摧毀。',
+    next: '6'
+  },
+  {
+    title: '輸入框字體顏色 + 欄寬',
+    status: 'ok',
+    ref: 'renderMotif() / CSS table-layout',
+    notes: 'table-layout:fixed 讓數值放得下。',
+    next: '7'
+  },
+  {
+    title: '元素週期表（新增/參考）',
+    status: 'ok',
+    ref: 'buildPeriodicTable() / ptAdd()',
+    notes: '118 元素，點擊即新增原子。',
+    next: '8'
+  },
+  {
+    title: 'Flow Inspector：notes 第二欄位',
+    status: 'ok',
+    ref: 'itemFields[] 一般化（ref + notes）',
+    notes: '已修：單一 itemField → 陣列。',
+    next: '9'
+  },
+  {
+    title: 'Flow Inspector：節點連線 edges',
+    status: 'ok',
+    ref: 'FlowEdges（SVG 疊層）',
+    notes: 'next 欄位 → SVG 連線＋箭頭＋流動動畫。',
+    next: ''
+  }
 ]
 
 // ❌ 節點 → 產生交給 Claude 的修正 prompt
@@ -133,6 +187,15 @@ const SelectedItemEditor = ({
   const [refValue, setRefValue] = useState(itemRef(item))
   const [notesValue, setNotesValue] = useState(itemNotes(item))
   const [nextValue, setNextValue] = useState(itemNext(item))
+  const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current)
+    },
+    []
+  )
 
   useEffect(() => {
     setTitle(item.title)
@@ -188,13 +251,21 @@ const SelectedItemEditor = ({
     }
   }
 
+  const flashCopied = (): void => {
+    setCopied(true)
+    if (copiedTimer.current) clearTimeout(copiedTimer.current)
+    copiedTimer.current = setTimeout(() => setCopied(false), 1800)
+  }
+
   const copyFixPrompt = (): void => {
     const prompt = buildFixPrompt(item)
-    const done = (): void => onEdit('已複製修正 prompt，貼回對話給 Claude 即可')
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(prompt).then(done).catch(() => {
-        window.prompt('複製下面的修正 prompt：', prompt)
-      })
+      navigator.clipboard
+        .writeText(prompt)
+        .then(flashCopied)
+        .catch(() => {
+          window.prompt('複製下面的修正 prompt：', prompt)
+        })
     } else {
       window.prompt('複製下面的修正 prompt：', prompt)
     }
@@ -291,10 +362,10 @@ const SelectedItemEditor = ({
       {item.status === 'broken' && (
         <button
           type="button"
-          className="fix-prompt-button"
+          className={'fix-prompt-button' + (copied ? ' copied' : '')}
           onClick={copyFixPrompt}
         >
-          🛠 複製修正 prompt（交給 Claude）
+          {copied ? '✓ 已複製!' : '🛠 複製修正 prompt（交給 Claude）'}
         </button>
       )}
     </div>
@@ -448,6 +519,114 @@ const CanvasItem = ({
       <strong>{item.title}</strong>
       <small>{itemRef(item) || '拖曳移動 · 點擊編輯'}</small>
     </button>
+  )
+}
+
+// 畫布上的連線層：用 SVG 疊在卡片下方，箭頭用 <marker>，流動感用 dash 動畫。
+const FlowEdges = ({
+  items,
+  width,
+  height
+}: {
+  readonly items: readonly ItemProjection[]
+  readonly width: number
+  readonly height: number
+}) => {
+  const center = (index: number) => {
+    const b = getStarterItemRenderBounds(
+      index,
+      width,
+      items[index]?.offset,
+      height
+    )
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2, h: b.height }
+  }
+
+  const edges: {
+    key: string
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    status: ItemStatus
+  }[] = []
+
+  items.forEach((item, from) => {
+    itemNext(item)
+      .split(/[\s,]+/)
+      .map((token) => parseInt(token, 10))
+      .filter((n) => Number.isFinite(n))
+      .map((n) => n - 1)
+      .forEach((to) => {
+        if (to < 0 || to >= items.length || to === from) return
+        const a = center(from)
+        const b = center(to)
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const len = Math.hypot(dx, dy) || 1
+        const ux = dx / len
+        const uy = dy / len
+        const endPad = Math.min(len * 0.42, b.h / 2 + 11) // 終點往回縮，箭頭落在卡片邊緣
+        const startPad = Math.min(len * 0.3, a.h / 2 + 6)
+        edges.push({
+          key: from + '->' + to,
+          x1: a.x + ux * startPad,
+          y1: a.y + uy * startPad,
+          x2: b.x - ux * endPad,
+          y2: b.y - uy * endPad,
+          status: items[to].status
+        })
+      })
+  })
+
+  if (edges.length === 0) return null
+
+  return (
+    <svg
+      className="flow-edges"
+      width={width}
+      height={height}
+      aria-hidden="true"
+    >
+      <defs>
+        {(['ok', 'warn', 'broken'] as const).map((status) => (
+          <marker
+            key={status}
+            id={'fi-arrow-' + status}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path
+              d="M0,0 L10,5 L0,10 z"
+              className={'edge-head edge-head-' + status}
+            />
+          </marker>
+        ))}
+      </defs>
+      {edges.map((edge) => (
+        <g key={edge.key}>
+          <line
+            x1={edge.x1}
+            y1={edge.y1}
+            x2={edge.x2}
+            y2={edge.y2}
+            className={'edge-base edge-' + edge.status}
+            markerEnd={'url(#fi-arrow-' + edge.status + ')'}
+          />
+          <line
+            x1={edge.x1}
+            y1={edge.y1}
+            x2={edge.x2}
+            y2={edge.y2}
+            className={'edge-flow edge-' + edge.status}
+          />
+        </g>
+      ))}
+    </svg>
   )
 }
 
@@ -640,6 +819,11 @@ export const StarterApp = () => {
             <span className="canvas-ruler">WORKSPACE / 01</span>
             <div className="render-stage" style={{ height: stageHeight }}>
               <div id="starter-render-host" className="render-host" />
+              <FlowEdges
+                items={items}
+                width={canvasWidth}
+                height={stageHeight}
+              />
               <div className="stage-heading">
                 <strong>流程板</strong>
                 <span>可編輯步驟</span>
@@ -660,9 +844,7 @@ export const StarterApp = () => {
                 )
               })}
               {items.length === 0 && ready && (
-                <p className="empty-canvas">
-                  畫布是空的，點「新增步驟」開始。
-                </p>
+                <p className="empty-canvas">畫布是空的，點「新增步驟」開始。</p>
               )}
             </div>
           </div>

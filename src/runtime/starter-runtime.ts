@@ -35,6 +35,7 @@ import {
 } from '../domain/item-domain.js'
 import { StarterProjectionStore } from './projection-store.js'
 import {
+  clearSavedCoreDocument,
   readSavedCoreDocument,
   saveCoreDocument,
   type LoadResult,
@@ -140,7 +141,9 @@ const assertItemFields = (
   ) {
     throw new StarterDomainError('item-field', 'Item fields must be an object.')
   }
-  const byKey = new Map(itemFields.map((itemField) => [itemField.key, itemField]))
+  const byKey = new Map(
+    itemFields.map((itemField) => [itemField.key, itemField])
+  )
   const providedKeys = fields ? Object.keys(fields) : []
   if (providedKeys.some((key) => !byKey.has(key))) {
     throw new StarterDomainError('item-field', 'Unsupported Item field.')
@@ -268,49 +271,8 @@ const ITEM_STATUS_COLORS: Record<ItemStatus, number> = {
   broken: 0xd64545 // 紅
 }
 
-// 解析節點的 next 欄位 → 目標步驟的 0-based index 陣列
-const parseNextTargets = (item: ItemProjection): number[] => {
-  const raw = item.fields?.next
-  if (typeof raw !== 'string' || raw.trim().length === 0) {
-    return []
-  }
-  return raw
-    .split(/[\s,]+/)
-    .map((token) => parseInt(token, 10))
-    .filter((n) => Number.isFinite(n))
-    .map((n) => n - 1)
-}
-
-type Point = { x: number; y: number }
-
-// 在畫布上畫一條帶箭頭的連線（來源中心 → 目標中心）
-const drawFlowEdge = (
-  canvas: OverlayCanvas,
-  from: Point,
-  to: Point,
-  color: number
-): void => {
-  canvas.line(from, to, { color, width: 2 })
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const len = Math.hypot(dx, dy) || 1
-  const ux = dx / len
-  const uy = dy / len
-  const tip: Point = { x: to.x - ux * 30, y: to.y - uy * 30 } // 箭尖，稍微離開目標中心
-  const head = 9
-  const back: Point = { x: tip.x - ux * head, y: tip.y - uy * head }
-  const perpX = -uy
-  const perpY = ux
-  const wing = head * 0.62
-  canvas.polygon(
-    [
-      tip,
-      { x: back.x + perpX * wing, y: back.y + perpY * wing },
-      { x: back.x - perpX * wing, y: back.y - perpY * wing }
-    ],
-    color
-  )
-}
+// 連線 edges 已改由 React SVG 疊層繪製（含箭頭與流動動畫），見 ui/StarterApp.tsx 的 FlowEdges。
+// 這層只負責背景格線與節點方塊。
 
 class StarterItemRenderLayer {
   readonly registration: RenderLayerRegistration
@@ -379,7 +341,7 @@ class StarterItemRenderLayer {
         { color: 0xeef2ed, width: 1 }
       )
     }
-    // 先算出每個節點的外框，供連線與節點共用
+    // 算出每個節點的外框
     const boundsList = items.map((item, index) =>
       getStarterItemRenderBounds(
         index,
@@ -388,28 +350,8 @@ class StarterItemRenderLayer {
         this.viewportHeight
       )
     )
-    const centerOf = (b: StarterItemRenderBounds): Point => ({
-      x: b.x + b.width / 2,
-      y: b.y + b.height / 2
-    })
 
-    // 先畫連線 edges（在節點底下）
-    items.forEach((item, index) => {
-      const from = centerOf(boundsList[index])
-      parseNextTargets(item).forEach((target) => {
-        if (target < 0 || target >= items.length || target === index) {
-          return
-        }
-        drawFlowEdge(
-          canvas,
-          from,
-          centerOf(boundsList[target]),
-          ITEM_STATUS_COLORS[items[target].status]
-        )
-      })
-    })
-
-    // 再畫節點（蓋在連線之上）
+    // 畫節點方塊（連線 edges 由 SVG 疊層負責）
     items.forEach((item, index) => {
       const { x, y, width, height } = boundsList[index]
       canvas.polygon(
@@ -792,6 +734,15 @@ export const createStarterRuntime = (
         core.load(loaded.core)
         return { ok: true, message: `Reloaded ${loaded.savedAt}` }
       } catch (error) {
+        if (error instanceof StarterDomainError) {
+          // 舊/壞存檔格式不相容 → 清掉重來（選項 B）：移除 slot，畫面維持目前狀態。
+          // 訊息保留具體原因，方便除錯。
+          clearSavedCoreDocument(storage)
+          return {
+            ok: false,
+            message: `${error.message}（舊存檔不相容，已清除；畫面不變，按「儲存」建立新存檔）`
+          }
+        }
         return {
           ok: false,
           message: error instanceof Error ? error.message : String(error)

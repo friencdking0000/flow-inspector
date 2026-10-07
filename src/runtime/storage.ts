@@ -10,6 +10,7 @@ export interface StarterStorage {
   readonly unavailableReason?: string
   getItem(key: string): string | null
   setItem(key: string, value: string): void
+  removeItem?(key: string): void
 }
 
 export interface SaveResult {
@@ -42,6 +43,11 @@ export const saveCoreDocument = (
       message: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+// 清掉重來（選項 B）：移除存檔 slot。無 removeItem 的 storage 則為 no-op。
+export const clearSavedCoreDocument = (storage: StarterStorage): void => {
+  storage.removeItem?.(STARTER_STORAGE_SLOT)
 }
 
 export const readSavedCoreDocument = (
