@@ -10,7 +10,48 @@ import {
   getStarterRenderHeight,
   type StarterRuntime
 } from '../runtime/starter-runtime.js'
+import {
+  createProjectStorage,
+  genProjectId,
+  getBaseStorage,
+  loadProjectsState,
+  migrateLegacyDocToProject,
+  removeProjectDoc,
+  saveProjectsState,
+  type FlowProject,
+  type ProjectsState
+} from '../runtime/project-store.js'
 import './styles.css'
+
+// 預設專案（第一次開啟）對應的本機根目錄，供「開啟檔案」組出絕對路徑。
+const DEFAULT_PROJECT_ROOT =
+  'C:/Users/GIGABYTE/Documents/Obsidian Vault/GitHub/stustclass/NANOMATERIALS'
+
+interface FileRef {
+  readonly file: string
+  readonly line?: number
+}
+
+// 從 ref 文字抓出「檔名(.副檔名)[:行號]」，抓不到(例如 rebuild())回傳 null。
+const parseFileRef = (ref: string): FileRef | null => {
+  const match = ref
+    .trim()
+    .match(/([A-Za-z0-9_\-./\\]+\.[A-Za-z0-9]+)(?::(\d+))?/)
+  if (!match) return null
+  return { file: match[1], line: match[2] ? parseInt(match[2], 10) : undefined }
+}
+
+const toAbsPath = (root: string, file: string): string => {
+  const base = root.replace(/\\/g, '/').replace(/\/+$/, '')
+  const rel = file.replace(/\\/g, '/').replace(/^\/+/, '')
+  return base + '/' + rel
+}
+
+// 組出 VS Code 深層連結：vscode://file/<絕對路徑>:<行號>
+const buildEditorUri = (root: string, ref: FileRef): string =>
+  'vscode://file/' +
+  toAbsPath(root, ref.file) +
+  (ref.line ? ':' + ref.line : '')
 
 // 本 app 啟用的三個自訂欄位：ref（連結位置）+ notes（備註）+ next（連線目標步驟號）
 const ITEM_FIELDS = [refItemField, notesItemField, nextItemField]
@@ -119,9 +160,15 @@ const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
 const useStarterRuntime = () => {
+  const base = useMemo(() => getBaseStorage(), [])
+  const projectStorage = useMemo(() => createProjectStorage(base), [base])
   const runtime = useMemo(
-    () => createStarterRuntime({ itemFields: ITEM_FIELDS }),
-    []
+    () =>
+      createStarterRuntime({
+        itemFields: ITEM_FIELDS,
+        storage: projectStorage.storage
+      }),
+    [projectStorage]
   )
   const [items, setItems] = useState<readonly ItemProjection[]>([])
   const [ready, setReady] = useState(false)
@@ -171,17 +218,28 @@ const useStarterRuntime = () => {
     }
   }, [runtime])
 
-  return { items, message, ready, runtime, setMessage, canvasWidth }
+  return {
+    items,
+    message,
+    ready,
+    runtime,
+    setMessage,
+    canvasWidth,
+    base,
+    projectStorage
+  }
 }
 
 const SelectedItemEditor = ({
   item,
   runtime,
-  onEdit
+  onEdit,
+  projectRoot
 }: {
   readonly item: ItemProjection
   readonly runtime: StarterRuntime
   readonly onEdit: (message: string) => void
+  readonly projectRoot: string
 }) => {
   const [title, setTitle] = useState(item.title)
   const [refValue, setRefValue] = useState(itemRef(item))
@@ -306,6 +364,45 @@ const SelectedItemEditor = ({
         }}
       />
       <p className="field-help">哪步壞掉就靠這個 ref 找實作位置</p>
+      {(() => {
+        const fileRef = parseFileRef(refValue)
+        if (!fileRef) return null
+        if (!projectRoot) {
+          return (
+            <p className="field-help open-file-hint">
+              設定上方專案「根目錄」後，可一鍵開啟 {fileRef.file}
+            </p>
+          )
+        }
+        const abs = toAbsPath(projectRoot, fileRef.file)
+        return (
+          <div className="open-file-row">
+            <a
+              className="open-file-btn"
+              href={buildEditorUri(projectRoot, fileRef)}
+            >
+              ↗ 在 VS Code 開啟
+              {fileRef.line ? '（第 ' + fileRef.line + ' 行）' : ''}
+            </a>
+            <button
+              type="button"
+              className="open-file-btn ghost"
+              onClick={() => {
+                if (navigator.clipboard?.writeText) {
+                  navigator.clipboard
+                    .writeText(abs)
+                    .then(() => onEdit('已複製絕對路徑'))
+                    .catch(() => window.prompt('複製絕對路徑：', abs))
+                } else {
+                  window.prompt('複製絕對路徑：', abs)
+                }
+              }}
+            >
+              複製路徑
+            </button>
+          </div>
+        )
+      })()}
       <label className="field-label" htmlFor="selected-item-notes">
         notes（備註）
       </label>
@@ -631,8 +728,19 @@ const FlowEdges = ({
 }
 
 export const StarterApp = () => {
-  const { items, message, ready, runtime, setMessage, canvasWidth } =
-    useStarterRuntime()
+  const {
+    items,
+    message,
+    ready,
+    runtime,
+    setMessage,
+    canvasWidth,
+    base,
+    projectStorage
+  } = useStarterRuntime()
+  const [projects, setProjects] = useState<readonly FlowProject[]>([])
+  const [activeProjectId, setActiveProjectId] = useState('')
+  const activeProject = projects.find((p) => p.id === activeProjectId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [requestedSelectionId, setRequestedSelectionId] = useState<
     string | null
@@ -676,28 +784,161 @@ export const StarterApp = () => {
     }
   }
 
-  // 首次開啟且畫布為空 → 自動塞入 CrystalCraft 範例流程
-  const seededRef = useRef(false)
+  // 專案索引持久化 + state 同步
+  const persistProjects = (next: ProjectsState): void => {
+    saveProjectsState(base, next)
+    setProjects(next.projects)
+    setActiveProjectId(next.activeId)
+  }
+
+  // 首次/返回開啟：初始化專案清單（取代舊的單一 seed）
+  const initedRef = useRef(false)
   useEffect(() => {
-    if (!ready || seededRef.current) return
-    if (items.length > 0) {
-      seededRef.current = true
-      return
-    }
-    seededRef.current = true
-    try {
-      SEED_STEPS.forEach((step) =>
-        runtime.feature.addItem({
-          title: step.title,
-          status: step.status,
-          fields: { ref: step.ref, notes: step.notes, next: step.next }
+    if (!ready || initedRef.current) return
+    initedRef.current = true
+    if (projectStorage.storage.unavailableReason) return // 儲存不可用 → 略過專案功能
+    void (async () => {
+      try {
+        let state = loadProjectsState(base)
+        if (!state || state.projects.length === 0) {
+          const def: FlowProject = {
+            id: genProjectId(),
+            name: 'CrystalCraft（NANOMATERIALS）',
+            rootPath: DEFAULT_PROJECT_ROOT
+          }
+          projectStorage.setActive(def.id)
+          // 先嘗試搬移舊的單槽存檔；搬得到且載得起來就保留既有流程，否則重新 seed。
+          let restored = false
+          if (migrateLegacyDocToProject(base, def.id)) {
+            const migratedResult = await runtime.reload()
+            restored = migratedResult.ok
+          }
+          if (!restored) {
+            SEED_STEPS.forEach((step) =>
+              runtime.feature.addItem({
+                title: step.title,
+                status: step.status,
+                fields: { ref: step.ref, notes: step.notes, next: step.next }
+              })
+            )
+            await runtime.save()
+          }
+          state = { activeId: def.id, projects: [def] }
+          saveProjectsState(base, state)
+        } else {
+          projectStorage.setActive(state.activeId)
+          const result = await runtime.reload()
+          if (!result.ok) await runtime.newDocument()
+        }
+        setProjects(state.projects)
+        setActiveProjectId(state.activeId)
+      } catch (error) {
+        setMessage(errorMessage(error))
+      }
+    })()
+  }, [ready, base, projectStorage, runtime, setMessage])
+
+  const switchProject = (targetId: string): void => {
+    if (!targetId || targetId === activeProjectId) return
+    setPending(true)
+    void (async () => {
+      try {
+        await runtime.save()
+        projectStorage.setActive(targetId)
+        const result = await runtime.reload()
+        if (!result.ok) await runtime.newDocument()
+        persistProjects({ activeId: targetId, projects })
+        setSelectedId(null)
+        setRedoDepth(0)
+        setMessage('已切換專案')
+      } catch (error) {
+        setMessage(errorMessage(error))
+      } finally {
+        setPending(false)
+      }
+    })()
+  }
+
+  const createProject = (): void => {
+    const name = window.prompt('新專案名稱：', '新流程')
+    if (!name || !name.trim()) return
+    setPending(true)
+    void (async () => {
+      try {
+        await runtime.save()
+        const project: FlowProject = {
+          id: genProjectId(),
+          name: name.trim(),
+          rootPath: ''
+        }
+        projectStorage.setActive(project.id)
+        await runtime.newDocument()
+        persistProjects({
+          activeId: project.id,
+          projects: [...projects, project]
         })
+        setSelectedId(null)
+        setRedoDepth(0)
+        setMessage('已建立專案「' + project.name + '」')
+      } catch (error) {
+        setMessage(errorMessage(error))
+      } finally {
+        setPending(false)
+      }
+    })()
+  }
+
+  const renameProject = (): void => {
+    if (!activeProject) return
+    const name = window.prompt('重新命名專案：', activeProject.name)
+    if (!name || !name.trim()) return
+    persistProjects({
+      activeId: activeProjectId,
+      projects: projects.map((p) =>
+        p.id === activeProjectId ? { ...p, name: name.trim() } : p
       )
-      // 靜默 seed，不覆寫狀態列（例如 storage 錯誤訊息）
-    } catch (error) {
-      setMessage(errorMessage(error))
-    }
-  }, [ready, items.length, runtime])
+    })
+  }
+
+  const deleteProject = (): void => {
+    if (!activeProject || projects.length <= 1) return
+    const removed = activeProject
+    if (
+      !window.confirm(
+        '刪除專案「' + removed.name + '」？此專案的流程會一併移除。'
+      )
+    )
+      return
+    const remaining = projects.filter((p) => p.id !== removed.id)
+    const nextActive = remaining[0].id
+    setPending(true)
+    void (async () => {
+      try {
+        removeProjectDoc(base, removed.id)
+        projectStorage.setActive(nextActive)
+        const result = await runtime.reload()
+        if (!result.ok) await runtime.newDocument()
+        persistProjects({ activeId: nextActive, projects: remaining })
+        setSelectedId(null)
+        setRedoDepth(0)
+        setMessage('已刪除專案「' + removed.name + '」')
+      } catch (error) {
+        setMessage(errorMessage(error))
+      } finally {
+        setPending(false)
+      }
+    })()
+  }
+
+  const setProjectRoot = (rootPath: string): void => {
+    if (!activeProject || rootPath === activeProject.rootPath) return
+    persistProjects({
+      activeId: activeProjectId,
+      projects: projects.map((p) =>
+        p.id === activeProjectId ? { ...p, rootPath } : p
+      )
+    })
+  }
 
   const runHistory = (
     command: () => Promise<void>,
@@ -752,7 +993,7 @@ export const StarterApp = () => {
           <span className="brand-name">FLOW INSPECTOR</span>
         </div>
         <div className="workspace-name">
-          <span>NANOMATERIALS / CrystalCraft</span>
+          <span>{activeProject?.name ?? 'Flow Inspector'}</span>
           <strong>流程檢視</strong>
         </div>
         <p className={'save-state ' + statusTone} role="status" title={message}>
@@ -760,6 +1001,61 @@ export const StarterApp = () => {
           <span>{message}</span>
         </p>
       </header>
+
+      {projects.length > 0 && (
+        <div className="project-bar">
+          <span className="pb-label">專案</span>
+          <select
+            className="pb-select"
+            aria-label="切換專案"
+            value={activeProjectId}
+            onChange={(event) => switchProject(event.target.value)}
+            disabled={!ready || pending}
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={createProject}
+            disabled={!ready || pending}
+          >
+            ＋ 新增
+          </button>
+          <button
+            type="button"
+            onClick={renameProject}
+            disabled={!ready || pending || !activeProject}
+          >
+            改名
+          </button>
+          <button
+            type="button"
+            onClick={deleteProject}
+            disabled={!ready || pending || projects.length <= 1}
+          >
+            刪除
+          </button>
+          <span className="pb-sep" />
+          <label className="pb-label" htmlFor="pb-root">
+            根目錄
+          </label>
+          <input
+            id="pb-root"
+            className="pb-root"
+            key={activeProjectId}
+            placeholder="例如 C:/…/NANOMATERIALS（給『開啟檔案』用）"
+            defaultValue={activeProject?.rootPath ?? ''}
+            onBlur={(event) => setProjectRoot(event.target.value.trim())}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+            }}
+          />
+        </div>
+      )}
 
       <div className="workspace">
         <section className="canvas-area" aria-label="Starter workspace">
@@ -892,6 +1188,7 @@ export const StarterApp = () => {
               item={selectedItem}
               runtime={runtime}
               onEdit={afterEdit}
+              projectRoot={activeProject?.rootPath ?? ''}
             />
           ) : (
             <p className="empty-editor">選一個步驟來編輯</p>

@@ -78,6 +78,7 @@ export interface StarterRuntime {
   redo(): Promise<void>
   save(): Promise<SaveResult>
   reload(): Promise<LoadResult>
+  newDocument(): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -748,6 +749,14 @@ export const createStarterRuntime = (
           message: error instanceof Error ? error.message : String(error)
         }
       }
+    },
+    async newDocument() {
+      if (disposed) {
+        return
+      }
+      // 切到全新/空白專案：載入空白文件，畫布清空。
+      core.load(createEmptyCoreDocument())
+      refreshProjection()
     },
     async dispose() {
       if (disposed) {

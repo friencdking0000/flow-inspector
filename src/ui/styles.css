@@ -37,7 +37,91 @@ input:focus-visible {
 .starter-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: 70px minmax(0, 1fr);
+  grid-template-rows: 70px auto minmax(0, 1fr);
+}
+.project-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  background: #eef2ec;
+  border-bottom: 1px solid #d4ddd4;
+  flex-wrap: wrap;
+}
+.project-bar .pb-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #5c6f68;
+  text-transform: uppercase;
+}
+.project-bar .pb-select {
+  min-width: 190px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #c3d0c7;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d3030;
+}
+.project-bar button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #c3d0c7;
+  border-radius: 6px;
+  background: #fff;
+  color: #27423c;
+  font-size: 12.5px;
+}
+.project-bar button:hover:not(:disabled) {
+  border-color: #277b70;
+}
+.project-bar .pb-sep {
+  width: 1px;
+  height: 20px;
+  background: #cdd8cf;
+  margin: 0 4px;
+}
+.project-bar .pb-root {
+  flex: 1 1 260px;
+  min-width: 200px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #c3d0c7;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d3030;
+  font-size: 12px;
+}
+.open-file-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.open-file-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #2c8073;
+  border-radius: 6px;
+  background: #2c8073;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.open-file-btn:hover {
+  filter: brightness(1.08);
+}
+.open-file-btn.ghost {
+  background: #fff;
+  color: #27423c;
+  border-color: #c3d0c7;
+  font-weight: 500;
+}
+.open-file-hint {
+  color: #8a6d3b;
 }
 .app-header {
   display: flex;
