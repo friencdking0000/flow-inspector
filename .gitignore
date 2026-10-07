@@ -3,6 +3,7 @@ dist
 coverage
 test-results
 playwright-report
+PylForBook/
 .env.local
 .env.development.local
 .env.test.local
