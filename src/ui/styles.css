@@ -123,6 +123,81 @@ input:focus-visible {
 .open-file-hint {
   color: #8a6d3b;
 }
+.import-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 28, 25, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+.import-dialog {
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #d4ddd4;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+  padding: 18px;
+}
+.import-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.import-head strong {
+  font-size: 15px;
+}
+.import-head span {
+  font-size: 12px;
+  color: #5c6f68;
+}
+.import-head b {
+  color: #d64545;
+}
+.import-text {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px 11px;
+  border: 1px solid #c3d0c7;
+  border-radius: 8px;
+  background: #f8faf7;
+  color: #1d3030;
+}
+.import-error {
+  margin: 8px 0 0;
+  color: #d64545;
+  font-size: 12.5px;
+}
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.import-actions button {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid #c3d0c7;
+  border-radius: 7px;
+  background: #fff;
+  color: #27423c;
+  font-size: 13px;
+}
+.import-actions button.primary {
+  background: #2c8073;
+  border-color: #2c8073;
+  color: #fff;
+  font-weight: 600;
+}
+.import-actions button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
 .app-header {
   display: flex;
   align-items: center;

@@ -747,6 +747,9 @@ export const StarterApp = () => {
   >(null)
   const [pending, setPending] = useState(false)
   const [redoDepth, setRedoDepth] = useState(0)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importError, setImportError] = useState('')
   const selectedItem = items.find((item) => item.id === selectedId)
   const stageHeight = getStarterRenderHeight(items.length, canvasWidth)
   const canUndo = ready && !pending && runtime.core.getUndoHistoryDepth() > 0
@@ -940,6 +943,84 @@ export const StarterApp = () => {
     })
   }
 
+  // 匯入 JSON：解析步驟陣列 → 取代目前專案的整張流程。
+  const importFlow = (): void => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(importText)
+    } catch (error) {
+      setImportError('JSON 格式錯誤：' + errorMessage(error))
+      return
+    }
+    if (!Array.isArray(parsed)) {
+      setImportError('最外層必須是陣列 [ … ]')
+      return
+    }
+    const toStr = (value: unknown): string => {
+      if (Array.isArray(value)) return value.join(',')
+      if (value === null || value === undefined) return ''
+      return String(value)
+    }
+    const steps: {
+      title: string
+      status: ItemStatus
+      ref: string
+      notes: string
+      next: string
+    }[] = []
+    for (const raw of parsed) {
+      if (
+        !raw ||
+        typeof raw !== 'object' ||
+        typeof (raw as { title?: unknown }).title !== 'string' ||
+        !(raw as { title: string }).title.trim()
+      ) {
+        setImportError('每個步驟都要有非空的 title')
+        return
+      }
+      const record = raw as Record<string, unknown>
+      const status =
+        record.status === 'warn' || record.status === 'broken'
+          ? (record.status as ItemStatus)
+          : 'ok'
+      steps.push({
+        title: (record.title as string).trim(),
+        status,
+        ref: toStr(record.ref),
+        notes: toStr(record.notes),
+        next: toStr(record.next)
+      })
+    }
+    if (steps.length === 0) {
+      setImportError('沒有任何步驟')
+      return
+    }
+    setPending(true)
+    void (async () => {
+      try {
+        await runtime.newDocument()
+        steps.forEach((step) =>
+          runtime.feature.addItem({
+            title: step.title,
+            status: step.status,
+            fields: { ref: step.ref, notes: step.notes, next: step.next }
+          })
+        )
+        await runtime.save()
+        setImportOpen(false)
+        setImportText('')
+        setImportError('')
+        setSelectedId(null)
+        setRedoDepth(0)
+        setMessage('已匯入 ' + steps.length + ' 個步驟')
+      } catch (error) {
+        setImportError(errorMessage(error))
+      } finally {
+        setPending(false)
+      }
+    })()
+  }
+
   const runHistory = (
     command: () => Promise<void>,
     label: string,
@@ -1038,6 +1119,16 @@ export const StarterApp = () => {
             disabled={!ready || pending || projects.length <= 1}
           >
             刪除
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setImportError('')
+              setImportOpen(true)
+            }}
+            disabled={!ready || pending || !activeProject}
+          >
+            匯入
           </button>
           <span className="pb-sep" />
           <label className="pb-label" htmlFor="pb-root">
@@ -1198,6 +1289,60 @@ export const StarterApp = () => {
           </div>
         </aside>
       </div>
+
+      {importOpen && (
+        <div
+          className="import-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="匯入流程 JSON"
+          onClick={() => setImportOpen(false)}
+        >
+          <div
+            className="import-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="import-head">
+              <strong>匯入流程（JSON）</strong>
+              <span>
+                貼上步驟陣列，會<b>取代目前專案</b>「{activeProject?.name}
+                」的整張流程
+              </span>
+            </div>
+            <textarea
+              className="import-text"
+              aria-label="流程 JSON"
+              rows={12}
+              placeholder={
+                '[\n  { "title": "步驟", "status": "ok", "ref": "src/x.ts:10", "notes": "說明", "next": "2" }\n]'
+              }
+              value={importText}
+              onChange={(event) => {
+                setImportText(event.target.value)
+                if (importError) setImportError('')
+              }}
+            />
+            {importError && <p className="import-error">{importError}</p>}
+            <div className="import-actions">
+              <button
+                type="button"
+                onClick={() => setImportOpen(false)}
+                disabled={pending}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={importFlow}
+                disabled={pending || !importText.trim()}
+              >
+                匯入並取代
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -1,0 +1,86 @@
+[
+  {
+    "title": "進入點 bootstrap",
+    "status": "ok",
+    "ref": "src/main.tsx",
+    "notes": "ConfigProvider(antd zhTW)+BrowserRouter+AntdApp 包住 App。",
+    "next": "2"
+  },
+  {
+    "title": "App 路由 + 初始化",
+    "status": "ok",
+    "ref": "src/App.tsx:8",
+    "notes": "init() 載資料；ready 後 startSimulator()。路由 /→總覽、/beds/:bedId→詳情。",
+    "next": "3"
+  },
+  {
+    "title": "store.init() 載入床位/告警",
+    "status": "ok",
+    "ref": "src/store/useMonitorStore.ts:81",
+    "notes": "模擬 600ms 延遲 → buildBeds + buildInitialAlerts，loadState loading→ready。",
+    "next": "4,5"
+  },
+  {
+    "title": "假資料來源 fixtures",
+    "status": "warn",
+    "ref": "src/mock/fixtures.ts",
+    "notes": "buildBeds/buildInitialAlerts/buildTrend。原型假資料，待接真後端。",
+    "next": "6"
+  },
+  {
+    "title": "模擬即時串流 simulator",
+    "status": "warn",
+    "ref": "src/mock/simulator.ts:74",
+    "notes": "每 1s tick 新鮮度、每 3s step() 推遙測。模擬樹莓派/WebSocket，待換真串流。",
+    "next": "6"
+  },
+  {
+    "title": "套用生命徵象 applyVital",
+    "status": "ok",
+    "ref": "src/store/useMonitorStore.ts:104",
+    "notes": "更新 vitals+lastUpdatedAt+heartbeat，並重算 status。",
+    "next": "7,8"
+  },
+  {
+    "title": "門檻判定 → 產生告警",
+    "status": "ok",
+    "ref": "src/utils/thresholds.ts:4",
+    "notes": "evaluateLevel critical/warning/normal；maybeCreateAlert→addAlert(去重)。DEFAULT_THRESHOLDS。",
+    "next": "11"
+  },
+  {
+    "title": "床位狀態推導 deriveBedStatus",
+    "status": "ok",
+    "ref": "src/store/useMonitorStore.ts:21",
+    "notes": "offline>stale(isStale 逾15s)>critical>warning>normal。",
+    "next": "9"
+  },
+  {
+    "title": "總覽頁 OverviewPage",
+    "status": "ok",
+    "ref": "src/pages/OverviewPage.tsx:24",
+    "notes": "SummaryBar + 床卡 grid(BedCard) + 右側 AlertCenter；sortBy 排序。",
+    "next": "10,11"
+  },
+  {
+    "title": "床位詳情頁 BedDetailPage",
+    "status": "ok",
+    "ref": "src/pages/BedDetailPage.tsx:28",
+    "notes": "姿態/熱影像(權限 can viewCamera)、VitalCard、TrendChart(fetchVitalsSeries)、AlertHistory。",
+    "next": "12"
+  },
+  {
+    "title": "告警中心 AlertCenter",
+    "status": "ok",
+    "ref": "src/components/overview/AlertCenter.tsx",
+    "notes": "selectActiveAlerts 過濾未處理，點開 → AlertActionModal。",
+    "next": "12"
+  },
+  {
+    "title": "告警處置生命週期 transitionAlert",
+    "status": "ok",
+    "ref": "src/store/useMonitorStore.ts:158",
+    "notes": "確認/暫停/解除/已恢復，寫 audit log。權限 can(ackAlert…)。",
+    "next": ""
+  }
+]
